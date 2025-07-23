@@ -1,0 +1,371 @@
+name: Vencord Build # Need to fix custom installer "https://github.com/segeyy/Installer"
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Chạy mỗi giờ
+  workflow_dispatch: # Cho phép kích hoạt thủ công
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  vencord-setup:
+    runs-on: ubuntu-latest
+    outputs:
+      ven_hash: ${{ steps.hash.outputs.hash }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install required tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dos2unix rsync
+
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.MY_PAT }}
+          path: 'main-repo'
+          fetch-depth: 0
+          submodules: false
+          set-safe-directory: false
+
+      - name: Setup Vencord directory
+        run: |
+          mkdir -p main-repo/Vencord
+          git clone --depth 1 --single-branch --branch main https://github.com/Vendicated/Vencord.git temp-vencord
+          rsync -a --delete --exclude='.git' --exclude='node_modules' temp-vencord/ main-repo/Vencord/
+          rm -rf temp-vencord
+
+      - name: Update Vencord from upstream
+        run: |
+          git clone --depth 1 --single-branch --branch main https://github.com/Vendicated/Vencord.git temp-upstream
+          rsync -a --delete --exclude='.git' --exclude='node_modules' temp-upstream/ main-repo/Vencord/
+          rm -rf temp-upstream
+
+      - name: Modify .gitignore for dist and executables
+        run: |
+          cd main-repo/Vencord
+          if [ -f ".gitignore" ]; then
+            sed -i -e '/dist/d' -e '/\.exe/d' -e '/vencord_installer/d' .gitignore
+            echo "# Dist and executable files are intentionally tracked in this fork" >> .gitignore
+          else
+            echo "No .gitignore file found"
+          fi
+
+      - name: Install dependencies
+        run: |
+          cd main-repo/Vencord
+          npm i -g pnpm
+          pnpm i
+
+      - name: Update plugin
+        run: |
+          cd main-repo/Vencord/src/plugins
+          if [ -d "fakeProfile" ]; then
+            rm -rf fakeProfile
+          fi
+          git clone --depth 1 https://github.com/gujarathisampath/fakeProfile.git
+          rm -rf fakeProfile/.git
+          find fakeProfile -type f -exec dos2unix {} +
+
+      - name: Apply fix CSP for fakeProfile
+        run: python3 main-repo/src/csp_fix.py
+
+      - name: Generate Vencord hash
+        id: hash
+        run: |
+          cd main-repo/Vencord
+          echo "hash=$(date +%s)" >> $GITHUB_OUTPUT
+
+  vencord-build:
+    needs: vencord-setup
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.MY_PAT }}
+          path: 'main-repo'
+          fetch-depth: 0
+          submodules: false
+          set-safe-directory: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.20'
+          # Tắt cache để tránh cảnh báo
+          cache: false
+
+      - name: Install platform-specific tools
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            # Cài công cụ build cho Windows
+            choco install -y nsis python3
+            
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            # Cài công cụ build cho macOS
+            if ! command -v brew &> /dev/null; then
+              /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+              echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bash_profile
+              source ~/.bash_profile
+            fi
+            
+            # Kiểm tra trước khi cài để tránh cảnh báo
+            if ! brew list pkg-config &> /dev/null; then
+              brew install pkg-config
+            fi
+            
+            if ! brew list sdl2 &> /dev/null; then
+              brew install sdl2
+            fi
+            
+          elif [ "$RUNNER_OS" == "Linux" ]; then
+            # Cài công cụ build cho Linux
+            sudo apt-get update
+            sudo apt-get install -y \
+              pkg-config \
+              libsdl2-dev \
+              libglx-dev \
+              libgl1-mesa-dev \
+              xorg-dev \
+              libwayland-dev \
+              libxkbcommon-dev \
+              wayland-protocols \
+              extra-cmake-modules \
+              libx11-dev \
+              libxcursor-dev \
+              libxi-dev \
+              libxinerama-dev \
+              libxrandr-dev \
+              ruby-dev \
+              build-essential \
+              rpm \
+              libgl-dev
+            
+            # Cài fpm qua gem
+            if ! command -v fpm &> /dev/null; then
+              sudo gem install fpm
+            fi
+            
+          fi
+
+      - name: Install dependencies
+        run: |
+          cd main-repo/Vencord
+          npm i -g pnpm
+          pnpm i
+
+      - name: Build artifacts
+        shell: bash
+        run: |
+          cd main-repo/Vencord
+          
+          git init -q
+          git config user.name "github-actions"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -q -m "Temporary commit for build"
+          
+          git remote add origin https://github.com/Vendicated/Vencord.git
+          
+          pnpm build
+          pnpm buildWeb
+          
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            cmd.exe /c "rmdir /s /q .git"
+          else
+            rm -rf .git
+          fi
+          
+          mv dist dist-${{ runner.os }}
+
+      - name: Build custom installer
+        shell: bash
+        run: |
+          cd main-repo
+          
+          # Clone repo installer đã fork
+          git clone --depth 1 https://github.com/segeyy/Installer.git
+          cd Installer
+          
+          # Tạo file go.sum tạm thời để tránh cảnh báo cache
+          touch go.sum
+          
+          # Cài đặt dependencies Go
+          go mod tidy
+          
+          # Tạo thư mục đầu ra
+          mkdir -p build
+          
+          # Xác định ldflags chung
+          LDFLAGS="-s -w -X 'vencordinstaller/buildinfo.InstallerGitHash=$(git rev-parse --short HEAD)'"
+          
+          # Build cho tất cả nền tảng
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            # Build GUI
+            CGO_ENABLED=1 GOOS=windows GOARCH=amd64 go build -v \
+              -tags static \
+              -ldflags "$LDFLAGS -H=windowsgui -extldflags=-static" \
+              -o build/VencordInstaller-GUI.exe
+            
+            # Build CLI
+            CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -v \
+              -tags "static cli" \
+              -ldflags "$LDFLAGS -extldflags=-static" \
+              -o build/VencordInstaller-CLI.exe
+            
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            # Build GUI
+            CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -v \
+              -tags static \
+              -ldflags "$LDFLAGS" \
+              -o build/VencordInstaller-GUI
+            
+            # Build CLI
+            CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -v \
+              -tags "static cli" \
+              -ldflags "$LDFLAGS" \
+              -o build/VencordInstaller-CLI
+            
+          elif [ "$RUNNER_OS" == "Linux" ]; then
+            # Build GUI cho X11
+            CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -v \
+              -tags static \
+              -ldflags "$LDFLAGS" \
+              -o build/VencordInstaller-GUI-X11
+            
+            # Build GUI cho Wayland
+            CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -v \
+              -tags "static wayland" \
+              -ldflags "$LDFLAGS" \
+              -o build/VencordInstaller-GUI-Wayland
+            
+            # Build CLI
+            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v \
+              -tags "static cli" \
+              -ldflags "$LDFLAGS" \
+              -o build/VencordInstaller-CLI
+          fi
+          
+          # Kiểm tra file đã build
+          echo "Built files:"
+          ls -l build/
+          
+          # Tạo thư mục installers trong Vencord
+          mkdir -p "../Vencord/installers/$RUNNER_OS"
+          
+          # Copy file build vào thư mục đích
+          if [ -n "$(ls -A build/)" ]; then
+            cp build/* "../Vencord/installers/$RUNNER_OS/"
+          else
+            echo "No files found in build directory!"
+            exit 1
+          fi
+          
+          echo "Installer built for $RUNNER_OS"
+
+      - name: Prepare installer artifact
+        shell: bash
+        run: |
+          cd main-repo
+          # Tạo thư mục artifact
+          mkdir -p installer-${{ runner.os }}
+          
+          # Di chuyển installers vào thư mục artifact
+          mv Vencord/installers installer-${{ runner.os }}/installers
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ runner.os }}
+          path: main-repo/installer-${{ runner.os }}
+          retention-days: 1
+
+  combine-and-commit:
+    needs: [vencord-setup, vencord-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.MY_PAT }}
+          path: 'main-repo'
+          fetch-depth: 0
+          submodules: false
+          set-safe-directory: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Download all installer artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: installer-artifacts
+
+      - name: Combine installers
+        run: |
+          cd main-repo
+          
+          # Tạo thư mục installers trong Vencord
+          mkdir -p Vencord/installers
+          
+          # Kết hợp tất cả installers từ các artifacts
+          for installer_artifact in installer-artifacts/installer-*; do
+            if [ -d "$installer_artifact" ]; then
+              # Sao chép tất cả thư mục OS từ artifact
+              for os_dir in "$installer_artifact"/installers/*; do
+                if [ -d "$os_dir" ]; then
+                  os_name=$(basename "$os_dir")
+                  mkdir -p "Vencord/installers/$os_name"
+                  cp -a "$os_dir"/* "Vencord/installers/$os_name/"
+                fi
+              done
+            fi
+          done
+          
+          # Kiểm tra nội dung
+          echo "Installers:"
+          ls -la Vencord/installers
+
+      - name: Commit Vencord changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_PAT }}
+          tag: ${{ env.RELEASE_VERSION }}
+        run: |
+          cd main-repo
+          git config user.name "github-actions"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull "https://$GITHUB_ACTOR:${{ secrets.MY_PAT }}@github.com/segeyy/fP-Auto-Build.git" main
+
+          git add Vencord
+          if ! git diff-index --quiet HEAD -- Vencord; then
+            python3 main-repo/src/tag_generator.py
+            git commit -m "🤖 feat(build/Vencord): Update installers $(date +'%Y-%m-%d %H:%M')"
+            git push "https://$GITHUB_ACTOR:${{ secrets.MY_PAT }}@github.com/segeyy/fP-Auto-Build.git" main
+            gh release create "$tag" \
+              --repo="$GITHUB_REPOSITORY" \
+              --title="${GITHUB_REPOSITORY#*/}-${tag#v}" \
+              --generate-notes
+          else
+            echo "No changes in Vencord directory"
+          fi
