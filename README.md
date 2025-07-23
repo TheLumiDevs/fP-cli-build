@@ -1,3 +1,6 @@
+> [!WARNING]
+> NOT WORKING AS WELL, IT NEEDS REWRITING.
+
 # fP-Auto-Build
 A automatic build fakeProfile plugin for Vencord, Equicord, etc...
 
