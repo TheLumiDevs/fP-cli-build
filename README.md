@@ -1,28 +1,29 @@
 > [!WARNING]
 > NOT WORKING AS WELL, IT NEEDS REWRITING.
 
-# fP-Auto-Build
-A automatic build fakeProfile plugin for Vencord, Equicord, etc...
+# fP-Cli-Build
+Auto CLI build fakeProfile plugin for Vencord, Equicord, etc...
 
 **Current fork version:**
 
 Vencord: ![](https://img.shields.io/github/package-json/v/Vendicated/Vencord?style=for-the-badge&logo=github&logoColor=d3869b&label=&color=1d2021&labelColor=282828) Equicord: ![](https://img.shields.io/github/package-json/v/Equicord/Equicord?style=for-the-badge&logo=github&logoColor=00ffff&label=&color=1d2021&labelColor=282828)
 
 # Status
+> [!NOTE]
+> - Extension & Userscript has been moved to new repository is **[fP-extension-build](https://github.com/TheLumiDevs/fP-extension-build)**. If you want update and download new extension, please go to new repository. Thank you <3  
+
 **Vencord:**  
-> - Chrome extension: ✅  
-> - Firefox extension: ✅  
-> - Userscript: ✅  
-> - Windows Installer: ❌ ([Custom installer](https://github.com/segeyy/Installer) still work in process)  
-> - Linux X11 Installer: ❌ ([Custom installer](https://github.com/segeyy/Installer) still work in process)  
-> - Linux Wayland Installer: ❌ ([Custom installer](https://github.com/segeyy/Installer) still work in process)  
-> - MacOS Installer: ❌ ([Custom installer](https://github.com/segeyy/Installer) still work in process)  
-> - CIL Installer: ❌ ([Custom installer](https://github.com/segeyy/Installer) still work in process)
+> - ~~Chrome extension: ✅~~  
+> - ~~Firefox extension: ✅~~  
+> - ~~Userscript: ✅~~  
+> - Windows CIL Installer: ❌
+> - Linux CIL Installer: ❌
+> - macOS CIL Installer: ❌  
 
 **Equicord:**
-> - Chrome extension: ✅  
-> - Firefox extension: ✅  
-> - Userscript: ✅  
+> - ~~Chrome extension: ✅~~  
+> - ~~Firefox extension: ✅~~  
+> - ~~Userscript: ✅~~  
 
 # How to use
 > [!NOTE]
