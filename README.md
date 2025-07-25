@@ -1,4 +1,4 @@
-> [!WARNING]
+> [!CAUTION]
 > NOT WORKING AS WELL, IT NEEDS REWRITING.
 
 # fP-Cli-Build
@@ -33,7 +33,7 @@ Vencord: ![](https://img.shields.io/github/package-json/v/Vendicated/Vencord?sty
 
 - Clone this repository by terminal and go to cloned repository:
 ```shell
-https://github.com/segeyy/fP-Auto-Build.git
+https://github.com/TheLumiDevs/fP-Auto-build.git
 cd fP-Auto-Build/
 ```
 
